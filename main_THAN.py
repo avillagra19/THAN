@@ -7,15 +7,16 @@ from matplotlib import pyplot as plt
 
 from utils_THAN import load_data, EarlyStopping, get_binary_mask
 
-# L2正则化-->#注意设置正则化项系数:通常选0.001
+# Regularización L2 --> #Presta atención a configurar el coeficiente de la regularización: normalmente se elige 0.001
+
 def L2Loss(model, alpha):
     l2_loss = torch.tensor(0.0, requires_grad=True)
     for name, param in model.named_parameters():
-        if 'bias' not in name:  # 一般不对偏置项使用正则
+        if 'bias' not in name:  # 一般不对偏置项使用正则  Normalmente no se aplica regularización al término de sesgo.
             l2_loss = l2_loss + (0.5 * alpha * torch.sum(torch.pow(param, 2)))
     return l2_loss
 
-# 多分类->f1_weight
+# Clasificación multiclase -> f1_weight
 def get_weighted_fscore(dic_, y_pred, y_true):
     f_score = 0
     for i in range(11):
@@ -25,29 +26,28 @@ def get_weighted_fscore(dic_, y_pred, y_true):
     return f_score
 
 def score(logits, labels):
-    # 统计标签中每个值所占比例
+    # Se cuentan las proporciones que ocupa cada valor en las etiquetas
     df_analysis = pd.DataFrame()
     df_analysis['label'] = labels
     dic_ = df_analysis['label'].value_counts(normalize=True)
-    # logits-->是一个对应训练集数量X交通方式数量的二维数组，其中每一行的值
-    # 表示为：该节点预测为每种交通方式的概率：共11个概率
-    # 其中_应该对应交通方式的概率或者得分,indices对应最大得分的id->即为交通方式
+    # logits es un arreglo bidimensional de [tamaño del conjunto de entrenamiento] x [número de modos de transporte]; cada fila
+    # “_” corresponde a la probabilidad o puntuación de cada modo de transporte, e “indices” corresponde al id con la puntuación más alta (modo de transporte)
     _, indices = torch.max(logits, dim=1)
-    # 预测标签
+    # Etiquetas pronosticadas
     prediction = indices.long().cpu().numpy()
-    # 节点实际标签
+    # Etiquetas reales del nodo
     labels = labels.cpu().numpy()
 
-    # 对应每个标签的分数，一定是二维数组
+    # Para cada etiqueta, la puntuación corresponde a un arreglo bidimensional
     y_score = np.zeros([1, logits.shape[0]], dtype=np.float64)
     for i in range(0, logits.shape[0]):
         y_score[0][i] = logits[i][prediction[i]]
 
-    # 标签重新赋值，构成二维数组
+    # Se reasignan las etiquetas para formar un arreglo bidimensional
     y_values = np.zeros([1, labels.shape[0]], dtype=float)
     for i in range(0, labels.shape[0]):
         y_values[0][i] = labels[i]
-    # 获得多分类f1值
+    # Obtener la métrica F1 para clasificación multiclase
     f_score = get_weighted_fscore(dic_, labels, prediction)
 
     accuracy = (prediction == labels).sum() / len(prediction)
@@ -56,7 +56,7 @@ def score(logits, labels):
     f1_weighted = f1_score(labels, prediction, average='weighted')
     Pre = precision_score(labels, prediction, average='weighted', zero_division=1)
     Rec = recall_score(labels, prediction, average='weighted')
-    # 输入值均为二维数组，所调用函数已经解释了哦，留意看！！！
+    # Los valores de entrada son arreglos bidimensionales; la función llamada ya se ha explicado, ¡presta atención!
     NDCG = ndcg_score(y_values, y_score)
 
     return accuracy, micro_f1, macro_f1, f1_weighted, Pre, Rec, NDCG, f_score
@@ -68,9 +68,9 @@ def evaluate(model, g, o_d_g, d_o_g, features, pid_features, o_features, d_featu
     loss = loss_func(logits[mask], labels[mask])
     accuracy, micro_f1, macro_f1, f1_weighted, Pre, Rec, NDCG, f_score = score(logits[mask], labels[mask])
     _, indices = torch.max(logits[mask], dim=1)
-    # 预测标签
+    # Etiquetas pronosticadas
     prediction = indices.long().cpu().numpy()
-    # 节点实际标签
+    # Etiquetas reales del nodo
     labels_new = labels[mask]
     labels_new = labels_new.cpu().numpy()
 
@@ -80,7 +80,7 @@ def main(args):
     g, o_d_g, d_o_g, features, pid_features, o_features, d_features, od_features, labels, num_classes, train_idx, val_idx, test_idx, train_mask, \
     val_mask, test_mask, test_mask_0, test_mask_1, test_mask_2, test_mask_3, o_d_count = load_data("Mydataset")
 
-    # 似乎很关键，mask值一定需要这里处理？
+    # Parece crucial; es necesario procesar el valor de mask aquí, ¿no?
     if hasattr(torch, 'BoolTensor'):
         train_mask = train_mask.bool()
         val_mask = val_mask.bool()
@@ -90,11 +90,11 @@ def main(args):
         test_mask_2 = test_mask_2.bool()
         test_mask_3 = test_mask_3.bool()
 
-    # mode特征
+    # Características de mode
     features = features.to(args['device'])
-    # pid特征
+    # Características de pid
     pid_features = pid_features.to(args['device'])
-    # od特征
+    # Características de od
     o_features = o_features.to(args['device'])
     d_features = d_features.to(args['device'])
     od_features = od_features.to(args['device'])
@@ -110,12 +110,12 @@ def main(args):
     o_d_count = o_d_count.to(args['device'])
 
     from model_THAN import THAN
-    # 包含pid和od
+    # Incluye pid y od
     model = THAN(meta_paths=[['pa', 'ap'], ['pf', 'fp']],
                 in_size=features.shape[1],
-                # pid 特征维度
+                # Dimensión de características pid
                 pid_size=pid_features.shape[1],
-                # od 特征维度
+                # Dimensión de características od
                 o_size=o_features.shape[1],
                 d_size=d_features.shape[1],
                 od_size=od_features.shape[1],
@@ -125,12 +125,12 @@ def main(args):
                 dropout=args['dropout']).to(args['device'])
     g = g.to(args['device'])
     dropout = args['dropout']
-    # o与d之间的二部图
+    # Grafo bipartito entre o y d
     o_d_g = o_d_g.to(args['device'])
     d_o_g = d_o_g.to(args['device'])
-    # 相关定义-->停止，损失函数，优化器
+    # Definiciones relacionadas: early stopping, función de pérdida, optimizador
     stopper = EarlyStopping(patience=args['patience'])
-    # 损失函数
+    # Función de pérdida
     loss_fcn = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'],
                                  weight_decay=args['weight_decay'])
@@ -141,7 +141,7 @@ def main(args):
     o_d_od_ID_data = o_d_od_ID_data.values
     o_d_od_ID_data = torch.FloatTensor(o_d_od_ID_data)
     o_d_od_ID_data = o_d_od_ID_data.to(args['device'])
-    #  优化迭代
+    #  Iteración de optimización
     Train_dataloader = DataLoader(train_mask, batch_size=20, drop_last=False)
     for epoch in range(args['num_epochs']):
         # 批处理
