@@ -13,9 +13,9 @@ import dgl.function as fn
 path = '../p38dglproject/dataset/output/'
 who = 'beijing'
 hid_dim = 8
-# 线性变换-->降维
-# 输入：需要降维的tensor，需要输出的维度
-# 输出：返回修改维度的tensor
+# Transformación lineal -> reducción de dimensiones
+# Entrada: el tensor que se desea reducir y la dimensión deseada de salida
+# Salida: retorna el tensor con la nueva dimensión
 def LinearChange(res, dst_feat_D):
     fc = nn.Linear(res.shape[1], dst_feat_D, bias=True)
     Ba = nn.BatchNorm1d(dst_feat_D)
@@ -27,11 +27,11 @@ def LinearChange(res, dst_feat_D):
     dst_feat = Dr(dst_feat)
     return dst_feat
 
-# -->语义级注意力
+# -->Atención a nivel semántico
 class SemanticAttention(nn.Module):
     def __init__(self, in_size, hidden_size=128):
         super(SemanticAttention, self).__init__()
-        # -->映射有点像单层MLP-->为了计算权重w
+        # -->El mapeo se parece a un MLP de una sola capa, para calcular el peso w
         self.project = nn.Sequential(
             # z
             nn.Linear(in_size, hidden_size),
@@ -41,20 +41,20 @@ class SemanticAttention(nn.Module):
         )
 
     def forward(self, z):
-        # -->z来自语义嵌入semantic_embeddings
-        # -->映射公式(7)-->求每条mata-path的权重
+        # -->z proviene de las incrustaciones semánticas (semantic_embeddings)
+        # -->Según la fórmula (7), se calcula el peso de cada meta-path
         w = self.project(z).mean(0)                    # (M, 1)
-        # -->归一化操作公式(8)
+        # -->Operación de normalización (fórmula (8))
         beta = torch.softmax(w, dim=0)                 # (M, 1)
         beta = beta.expand((z.shape[0],) + beta.shape) # (N, M, 1)
-        # -->语义级中的公式(9)
+        # -->Fórmula (9) a nivel semántico
         return (beta * z).sum(1)                       # (N, D * K)
 
-# --异构节点类型级注意力
+# Atención a nivel de tipos de nodo heterogéneo
 class NodetypeAttention(nn.Module):
     def __init__(self, in_size, hidden_size=64):
         super(NodetypeAttention, self).__init__()
-        # -->映射有点像单层MLP-->为了计算权重w
+        # -->El mapeo se parece a un MLP de una sola capa, para calcular el peso w
         self.project = nn.Sequential(
             # z
             nn.Linear(in_size, hidden_size),
@@ -64,28 +64,28 @@ class NodetypeAttention(nn.Module):
         )
 
     def forward(self, z):
-        # -->z来自语义嵌入semantic_embeddings
-        # -->映射公式(7)-->求每条mata-path的权重
+        # -->z proviene de las incrustaciones semánticas (semantic_embeddings)
+        # -->Según la fórmula (7), se calcula el peso de cada meta-path
         w = self.project(z).mean(0)                    # (M, 1)
-        # -->归一化操作公式(8)
+        # -->Operación de normalización (fórmula (8))
         beta = torch.softmax(w, dim=0)                 # (M, 1)
         beta = beta.expand((z.shape[0],) + beta.shape) # (N, M, 1)
-        # -->语义级中的公式(9)
+        # -->Fórmula (9) a nivel semántico
         return (beta * z).sum(1)                       # (N, D * K)
 
 class HANLayer(nn.Module):
     def __init__(self, meta_paths, in_size, out_size, layer_num_heads, dropout):
         super(HANLayer, self).__init__()
         # One GAT layer for each meta path based adjacency matrix
-        # --> 节点级注意力？
+        # --> ¿Atención a nivel de nodos?
         self.gat_layers = nn.ModuleList()
         for i in range(len(meta_paths)):
-            # HAN基于元路径的操作使用gat
+            # HAN usa GAT para la operación basada en meta-path
             self.gat_layers.append(GATConv(in_size, out_size, layer_num_heads,
                                            dropout, dropout, residual=False, activation=F.elu,
                                            allow_zero_in_degree=True))
 
-        # --> 语义级注意力？
+        # --> Atención a nivel semántico
         self.semantic_attention = SemanticAttention(in_size=out_size * layer_num_heads)
         self.meta_paths = list(tuple(meta_path) for meta_path in meta_paths)
         self._cached_graph = None
@@ -93,7 +93,7 @@ class HANLayer(nn.Module):
 
 
     def forward(self, g, h):
-        # -->语义嵌入-->节点级注意力
+        # -->Incrustación semántica -> atención a nivel de nodo
         semantic_embeddings = []
         if self._cached_graph is None or self._cached_graph is not g:
             self._cached_graph = g
@@ -105,17 +105,17 @@ class HANLayer(nn.Module):
         for i, meta_path in enumerate(self.meta_paths):
             new_g = self._cached_coalesced_graph[meta_path]
             semantic_embeddings.append(self.gat_layers[i](new_g, h).flatten(1))
-        # --> 语义嵌入
+        # -->Incrustación semántica
         semantic_embeddings = torch.stack(semantic_embeddings, dim=1)                  # (N, M, D * K)
-        # --> 语义嵌入：semantic_embeddings-->用于语义注意力的输入
-        # -->语义级注意力
+        # --> Incrustación semántica: semantic_embeddings se usa como entrada para la atención semántica
+        # -->Atención a nivel semántico
         return self.semantic_attention(semantic_embeddings)                            # (N, D * K)
 
 class THANLayer(nn.Module):
     def __init__(self, in_size, pid_size, od_size, out_size, layer_num_heads, dropout):
         super(THANLayer, self).__init__()
         # pid_gat
-        # 二部图（源节点，目标节点），输出特征
+        # Grafo bipartito (nodo origen, nodo destino), salida de características
         self.pid_gat = GATConv((pid_size, in_size), out_size, layer_num_heads,
                                dropout, dropout, residual=True, activation=F.leaky_relu,
                                allow_zero_in_degree=True)
@@ -124,24 +124,24 @@ class THANLayer(nn.Module):
                               dropout, dropout, residual=True, activation=F.leaky_relu,
                               allow_zero_in_degree=True)
 
-        # --> 语义级注意力？
+        # --> ¿Atención a nivel semántico?
         self.nodetype_attention = NodetypeAttention(in_size=out_size * layer_num_heads)
 
     def forward(self, temp_h, pid_g, pid_h, od_g, od_h):
-        # -->节点类型嵌入-->节点级注意力
+        # -->Incrustación de tipo de nodo -> atención a nivel de nodo
         nodetype_embeddings = []
         nodetype_embeddings.append(self.pid_gat(pid_g, (pid_h, temp_h)).flatten(1))
         nodetype_embeddings.append(self.od_gat(od_g, (od_h, temp_h)).flatten(1))
-        # --> 语义嵌入
+        # --> Incrustación semántica
         nodetype_embeddings = torch.stack(nodetype_embeddings, dim=1)                  # (N, M, D * K)
-        # --> 语义嵌入：semantic_embeddings-->用于语义注意力的输入
-        # -->语义级注意力
+        # --> Incrustación semántica: semantic_embeddings como entrada a la atención semántica
+        # -->Atención a nivel semántico
         return self.nodetype_attention(nodetype_embeddings)
-# --异构节点类型级注意力
+# --Atención a nivel de tipos de nodo heterogéneo
 class HybridAttention(nn.Module):
     def __init__(self, in_size, hidden_size=64):
         super(HybridAttention, self).__init__()
-        # -->映射有点像单层MLP-->为了计算权重w
+        # -->El mapeo se parece a un MLP de una sola capa, para calcular el peso w
         self.project = nn.Sequential(
             # z
             nn.Linear(in_size, hidden_size),
@@ -161,39 +161,39 @@ class THAN(nn.Module):
         super(THAN, self).__init__()
         self.layers = nn.ModuleList()
         self.layers.append(HANLayer(meta_paths, in_size, hidden_size, num_heads[0], dropout))
-        # 多头注意力机制(公式5)，num_heads为次数
+        # Mecanismo de atención multi-cabezal (fórmula (5)); num_heads indica el número de cabezales
         for l in range(1, len(num_heads)):
             self.layers.append(HANLayer(meta_paths, hidden_size * num_heads[l-1],
                                         hidden_size, num_heads[l], dropout))
 
-        # -->数据量x3075维度
+        # -->Cantidad de datos x dimensión 3075
         self.predict0 = nn.Linear(hidden_size * num_heads[-1], out_size, bias=True)
         self.Ba0 = nn.BatchNorm1d(out_size)
         self.Dr0 = nn.Dropout(0.2)
 
-        # 异构节点注意力
+        # Atención de nodo heterogéneo
         # hidden_size = 8, num_heads[0] = num_heads[-1] = 8
         self.nodetype_nn = THANLayer(in_size, pid_size, od_size, hidden_size, num_heads[0], dropout)
-        # MLP# 预测<---利用多层吧？<--多层似乎不好
+        # MLP para predicción. Se podría usar múltiples capas, aunque parece que no es tan bueno
 
         self.predict1 = nn.Linear(hidden_size * num_heads[-1] * 2, out_size, bias=True)
         self.Ba1 = nn.BatchNorm1d(out_size)
         self.Dr1 = nn.Dropout(0.2)
 
-        # 异构向量，同质向量
+        # Vectores heterogéneos, vectores homogéneos
         self.Hybrid_attention = HybridAttention(in_size=hidden_size * num_heads[-1])
 
         self.predict2 = nn.Linear(in_size, out_size, bias=True)
 
-        # 二部图（源节点，目标节点），输出特征-->out_size不能等于本身维度，其他都行
-        # 源->目标-->gcn
+        # Grafo bipartito (nodo origen, nodo destino), salida de características
+        # La dimensión out_size no puede ser la misma que la dimensión original. De lo contrario, todo bien
         self.o_d_gat = GraphConv(o_size, o_size, norm='both', weight=True, bias=True)#, activation=torch.tanh)
 
-        # 源->目标-->gcn
+        # Origen->Destino con GCN
         self.d_o_gat = GraphConv(d_size, d_size, norm='both', weight=True, bias=True)#, activation=torch.tanh)
 
         # od_pid_gat
-        # 二部图（源节点，目标节点），输出特征-->out_size不能等于本身维度，其他都行
+        # Origen->Destino con GCN
         self.od_pid_gat = GATConv((od_size, pid_size), od_size, num_heads[0],
                                            dropout, dropout, residual=True, activation=F.leaky_relu,
                                            allow_zero_in_degree=True)
@@ -203,32 +203,32 @@ class THAN(nn.Module):
                                dropout, dropout, residual=True, activation=F.leaky_relu,
                                allow_zero_in_degree=True)
 
-        # 恢复o维度
+        # Recuperar dimensión de o
         self.recover_o_D = nn.Linear(d_size, o_size, bias=True)
-        # 恢复d维度
+        # Recuperar dimensión de d
         self.recover_d_D = nn.Linear(o_size, d_size, bias=True)
-        # 恢复pid维度
+        # Recuperar dimensión de pid
         self.recover_pid_D = nn.Linear(od_size, pid_size, bias=True)
-        # 恢复od维度
+        # Recuperar dimensión de od
         self.recover_od_D = nn.Linear(pid_size, od_size, bias=True)
 
-        # 将o+d的维度变成od维度
+        # Convertir la dimensión de (o+d) a la dimensión od
         self.recover_o_d_to_od_D = nn.Linear((o_size + d_size), od_size, bias=True)
         hidden = 128
-        # 恢复pid维度-->in_size
+        # Recuperar dimensión de pid -> in_size
         self.recover_pid_D_hetergcn = nn.Linear(pid_size, in_size, bias=True)
-        # 恢复od维度-->in_size
+        # Recuperar dimensión de od -> in_size
         self.recover_od_D_hetergcn = nn.Linear(od_size, in_size, bias=True)
         # https://docs.dgl.ai/en/0.6.x/guide/nn-heterograph.html
         self.heterGcn = HeteroGraphConv({
-            # p为源，a为目标节点
+            # p es el nodo origen, a el nodo destino
             'pa': GraphConv(in_size, hidden),
             'ap': GraphConv(in_size, hidden),
             'pf': GraphConv(in_size, hidden),
             'fp': GraphConv(in_size, hidden)},
             aggregate='sum')
         self.heterGcn1 = HeteroGraphConv({
-            # p为源，a为目标节点
+            # p es el nodo origen, a el nodo destino
             'pa': GraphConv(hidden, hidden_size * num_heads[-1]),
             'ap': GraphConv(hidden, hidden_size * num_heads[-1]),
             'pf': GraphConv(hidden, hidden_size * num_heads[-1]),
@@ -236,35 +236,35 @@ class THAN(nn.Module):
             aggregate='sum')
         self.Dr3 = nn.Dropout(0.6)
 
-    # pid_h为pid特征
-    # od_h为od特征
-    # 完整的THAN：o+d->od, od与pid互相影响，分层注意力机制
-    # THAN: 多二部图嵌入，异构节点：gat，元路径（同质节点）：gat，有残差！！！
+    # pid_h son las características de pid
+    # od_h son las características de od
+    # THAN completo: o + d -> od, od y pid se influyen mutuamente, mecanismo de atención por capas
+    # THAN: incrustación de múltiples grafos bipartitos, nodos heterogéneos con GAT, meta-path (nodos homogéneos) con GAT, con residual
 
     #  --->
-    #  （1）分组验证“鲁棒性”，
-    #  （2）超参数敏感性：同质和异构向量维度变化，多头注意力的头的数量
+    #  (1) Validación por grupos para comprobar robustez
+    #  (2) Sensibilidad de hiperparámetros: variación de dimensión en vectores homogéneos y heterogéneos, número de cabezales de atención
     # forward_TAHN
     def forward(self, g, h, pid_h, o_h, d_h, o_d_g, d_o_g, od_h, o_d_od_ID_data, o_d_count):
-        # 节点原始特征做好备份
+        # Se hace una copia de seguridad de las características originales del nodo
         temp_h = h
-        # 同质网络中节点预测-->基于元路径
+        # Predicción de nodos en red homogénea -> basada en meta-path
         for gnn in self.layers:
-            # 输入的h(原)每次都一样，满足h(更新) = L*h(原)*w+b
-            # 其实是在改变w，使得h(更新)更适合于预测标签
+            # Cada vez se usa el h(original). Se cumple h(actualizado) = L*h(original)*w + b
+            # En realidad, se está cambiando w para que h(actualizado) se ajuste mejor a la predicción de la etiqueta
             h = gnn(g, h)
 
-        # ---->上面主要做基于元路径的m预测，下面主要做基于异构节点的m预测
+        # ---->Arriba se hace la predicción m basada en meta-path. Abajo, la predicción m basada en nodos heterogéneos
 
-        # -------->重新将o + d -> od将o和d合并为od<--------
-        # 更新o节点特征
+        # -------->Combinar o + d -> od, uniendo o y d en od<--------
+        # Actualizar características del nodo o
         res0 = self.o_d_gat(o_d_g, (o_h, d_h))  # , edge_weight=o_d_count)
-        # 降维操作-->gcn可不用-->无多头注意力机制
-        # 更新d节点特征
+        # Operación de reducción de dimensión -> con GCN no es necesaria -> no hay mecanismo multi-cabezal
+        # Actualizar características del nodo d
         res1 = self.d_o_gat(d_o_g, (d_h, o_h))  # , edge_weight=o_d_count)
-        # 降维操作-->gcn可不用-->无多头注意力机制
+        # Operación de reducción de dimensión -> con GCN no es necesaria -> no hay mecanismo multi-cabezal
 
-        # 线性变化：恢复o_h,d_h维度
+        # Transformación lineal para recuperar la dimensión de o_h y d_h
         o_h = self.recover_o_D(res1)
         d_h = self.recover_d_D(res0)
         o_h = o_h.detach().numpy()
@@ -275,7 +275,7 @@ class THAN(nn.Module):
         d_df = d_h.reset_index()
         o_h['o_ID'] = range(len(o_df))
         d_h['d_ID'] = range(len(d_df))
-        # 循环读操作，肯定存在固定耗时，看看如何放出去外面操作
+        # La lectura en bucle supone un coste fijo, quizás se pueda sacar fuera
         # o_d_od_ID_data = pd.read_csv((path + who + '/o_d_od_ID_data.csv'))
         o_d_od_ID_data = o_d_od_ID_data.detach().numpy()
         o_d_od_ID_data = pd.DataFrame(o_d_od_ID_data)
@@ -283,58 +283,58 @@ class THAN(nn.Module):
         o_d_od_ID_data_temp['od_ID'] = o_d_od_ID_data[1]
         o_d_od_ID_data_temp['o_ID'] = o_d_od_ID_data[2]
         o_d_od_ID_data_temp['d_ID'] = o_d_od_ID_data[3]
-        # 不用从文本中读入，自然会快很多
+        # No leerlo desde archivo acelera el proceso
         o_d_od_ID_data = o_d_od_ID_data_temp
         o_d_od_ID_data = o_d_od_ID_data.merge(o_h, on='o_ID', how='left')
         o_d_od_ID_data = o_d_od_ID_data.merge(d_h, on='d_ID', how='left')
-        # 按pid删除重复行
+        # Eliminar filas duplicadas según pid
         o_d_od_ID_data = o_d_od_ID_data.drop_duplicates(subset=['od_ID'], keep='first', inplace=False)
         # print("od number =", g.num_nodes('field'))
-        # -->需要的是OD的数量
+        # -->Se necesita el número de OD
         o_d_od_ID_data = o_d_od_ID_data[: g.num_nodes('field')]
         del o_d_od_ID_data['od_ID']
         del o_d_od_ID_data['o_ID']
         del o_d_od_ID_data['d_ID']
 
-        # o&d特征拼接
+        # Fusionar características de o & d
         od_h = o_d_od_ID_data.values
         od_h = torch.FloatTensor(od_h)
-        # 将o和d维度生成的特征转换为od维度的特征
+        # Convertir las características generadas de o y d a la dimensión od
         od_h = self.recover_o_d_to_od_D(od_h)
         #  -----> o + d -->od   <--------
-        # 二部图节点序列
+        # Secuencia de nodos bipartitos
         pid_m = g.edges('all', etype='pa')
         od_m = g.edges('all', etype='pf')
-        # 构建od_pid二部图,学习pid节点特征
+        # Construir grafo bipartito od_pid para aprender características de pid
         od_pid_g = dgl.heterograph({('srt_type', 'srt_dst_type', 'dst_type'): (od_m[1], pid_m[1])})
-        # 构建pid_od二部图，学习od节点特征
+        # Construir grafo bipartito pid_od para aprender características de od
         pid_od_g = dgl.heterograph({('srt_type', 'srt_dst_type', 'dst_type'): (pid_m[1], od_m[1])})
 
-        # 更新pid节点特征:od-->pid
+        # Actualizar características del nodo pid: od -> pid
         res0 = self.od_pid_gat(od_pid_g, (od_h, pid_h))
-        # gcn-->无需降维
-        res0 = res0.mean(axis=1, keepdim=False)  # 均值后变为二维
-        # 更新od节点特征:pid-->od
+        # Con GCN no hace falta reducción de dimensión
+        res0 = res0.mean(axis=1, keepdim=False)  # Se hace la media y se convierte a bidimensional
+        # Actualizar características del nodo od: pid -> od
         res1 = self.pid_od_gat(pid_od_g, (pid_h, od_h))
-        # gcn-->无需降维
-        res1 = res1.mean(axis=1, keepdim=False)  # 均值后变为二维
+        # Con GCN no hace falta reducción de dimensión
+        res1 = res1.mean(axis=1, keepdim=False)  # Se hace la media y se convierte a bidimensional
 
-        # 线性变化：恢复pid_h,od_h维度
+        # Transformación lineal para recuperar las dimensiones de pid_h y od_h
         pid_h = self.recover_pid_D(res0)
         od_h = self.recover_od_D(res1)
 
-        # 构建二部图-->重新利用图注意力学习mode节点特征
+        # Construir grafo bipartito -> volver a usar la atención en grafo para aprender características de mode
         pid_g = dgl.heterograph({('srt_type', 'srt_dst_type', 'dst_type'): (pid_m[1], pid_m[2])})
-        # 构建二部图-->重新利用图注意力学习节点特征
+        # Construir grafo bipartito -> volver a usar la atención en grafo para aprender características de nodos
         od_g = dgl.heterograph({('srt_type', 'srt_dst_type', 'dst_type'): (od_m[1], od_m[2])})
-        # 异构网络中节点预测-->基于异构节点
+        # Predicción de nodos en red heterogénea -> basada en nodos heterogéneos
         m_h = self.nodetype_nn(temp_h, pid_g, pid_h, od_g, od_h)
 
-        # 目标节点特征合并形式-->简单拼接
+        # Formato de fusión de las características del nodo objetivo -> concatenación simple
         h = torch.cat((m_h, h), 1)
-        # 实现MLP-->训练出来的两个信息进行连接
-        h = self.predict1(h)  # 数据量
-        # THAN是有这个操作的（激活函数，归一化等）
+        # Usar un MLP. Se conectan ambas informaciones entrenadas
+        h = self.predict1(h)  # Cantidad de datos
+        # THAN realiza esta operación (función de activación, normalización, etc.)
         h = self.Ba1(h)
         h = F.leaky_relu(h)
         # h = torch.tanh(h)
