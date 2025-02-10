@@ -1,5 +1,5 @@
 # encoding: utf-8
-# 利用图注意力网络提取目标节点(可变维度的)特征！！！！
+# Utilizar la red de atención en grafos para extraer las características del nodo objetivo (dimensión variable)！！！！
 import dgl
 import pandas as pd
 import numpy as np
@@ -14,7 +14,7 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn import preprocessing
 import torch.nn.functional as F
 
-# 最大最小归一化
+# Normalización Min-Max
 min_max_scaler = preprocessing.MinMaxScaler()
 '''
 u = [0, 1, 0, 0, 1]
@@ -32,7 +32,7 @@ np,show()
 path = '../p38dglproject/dataset/output/'
 who = 'beijing'
 
-# 经纬度拆分函数
+# Función para dividir las coordenadas de longitud y latitud
 def split_od(data):
     data['o_lng'] = data['o'].apply(lambda x: float(x.split(',')[0])).astype(np.float)
     data['o_lat'] = data['o'].apply(lambda x: float(x.split(',')[1])).astype(np.float)
@@ -41,22 +41,22 @@ def split_od(data):
     return data
 
 
-# 对用户特征进行降维
+# Reducción de dimensionalidad de las características del usuario
 def generate_profile_features(data):
-    # 人的属性
+    # Atributos del usuario
     profile_data = pd.read_csv('../p38dglproject/dataset/data_set_phase2/profiles.csv')
     # print("profile_data =", profile_data)
-    # x等于不包括PID的值
+    # x es igual a los valores sin la columna PID
     x = profile_data.drop(['pid'], axis=1).values
     # print("x =", x)
-    # 奇异值降维-20维
+    # Reducción de dimensionalidad por valores singulares a 20 dimensiones
     svd = TruncatedSVD(n_components=20, n_iter=20, random_state=42)
     # print("svd =", svd)
     svd_x = svd.fit_transform(x)
     svd_feas = pd.DataFrame(svd_x)
     # print("svd_feas =", svd_feas)
     svd_feas.columns = ['svd_attribute_{}'.format(i) for i in range(20)]
-    # svd_feas加入pid列
+    # Agregar la columna pid a svd_feas
     svd_feas['pid'] = profile_data['pid'].values
     # print("svd_feas =", svd_feas)
     # data['pid'] = data['pid'].fillna(-1)
@@ -64,7 +64,7 @@ def generate_profile_features(data):
     data = data.merge(svd_feas, on='pid', how='left')
     return data
 
-# 计算O或D对时间的偏好
+# Calcular la preferencia de O o D en función del tiempo
 
 def get_embedding(col):
     """
@@ -99,9 +99,9 @@ def get_embedding(col):
     print("{} embedding done.".format(col))
     return result
 
-# unique--->单独出现的情况
-# count-->所有出现情况，一对数出现的次数都统计，而unique只统计一次
-# 统计对于grouped_col, target_col出现的频率，data,'d','pid'表示有多少'pid'使用了'd'
+# unique---> cuenta solo valores únicos
+# count--> cuenta todas las apariciones, incluyendo repeticiones
+# Calcular la frecuencia de ocurrencia de target_col dentro de grouped_col, por ejemplo, cuántos 'pid' han utilizado un 'd'
 def get_unique(data, grouped_col, target_col):
     unique = data.groupby(grouped_col)[target_col].nunique().reset_index().rename(
         columns={target_col: "unique_{}".format(target_col)})
@@ -111,10 +111,10 @@ def get_unique(data, grouped_col, target_col):
         unique["{}_count".format(target_col)])
     return unique
 
-# 是否提取od的额外特征：o对d,time,pid的特征，d对o，time，pid的特征以及od对pid的特征
+# Flag para extraer características adicionales de od: características de o respecto a d, tiempo y pid, y características de d respecto a o, tiempo y pid
 od_flag = True
 
-# 提取od对的特征
+# Extraer características del par OD
 def extract_od_list():
     od_data = pd.read_csv(path + who + '/train_click_od.csv')
     print(od_data, od_data.shape)
@@ -142,11 +142,11 @@ def extract_od_list():
     od_pid_unique.to_csv(path + who + '/od_pid_unique.csv', index=False)
     '''
 
-    # --->将od边上的频率统计出来
+    # ---> Contar la frecuencia de aparición de cada par OD
     od_count = od_data.groupby(['od'], as_index=False)['od'].agg({'od_count': 'count'})
-    # 将od出现频率拼接到数据中
+    # Agregar la frecuencia de aparición de OD a los datos
     od_data = od_data.merge(od_count, 'left', ['od'])
-    # 向数据->添加o_ID
+    # Agregar o_ID a los datos
     # train_click_od = pd.read_csv(filepath + who + '/train_click_od.csv')
     print(od_data, od_data.shape)
 
@@ -154,17 +154,17 @@ def extract_od_list():
     # od_count = pd.DataFrame(od_count)
     # print("od_count =", od_count)
     # print("od_count.values =", od_count.values)
-    # 对使用频率进行最大最小归一化-->出现0值，这是不好的现象哦？
+    # Realizar normalización Min-Max en la frecuencia de uso → Aparecen valores 0, ¿esto no es un buen fenómeno?
     # od_count = min_max_scaler.fit_transform(od_count.values)
     # od_count = preprocessing.normalize(od_count.values, norm='l2')
     # od_data['od_count'] = od_count
     # print(od_data, od_data.shape)
     # np,show()
-    # 该语句可查看sid是否唯一
-    # --> 体现了节点的唯一性
+    # Esta sentencia permite verificar si 'sid' es único.
+    # ---> Obtener características únicas del nodo O
     o_value_unique = od_data['o'].unique()
 
-    # 找出节点o的唯一特征
+    # Encontrar las características únicas del nodo O
     tempdata = pd.DataFrame()
     o_value_unique_new = pd.DataFrame({'o_unique': o_value_unique})
     tempdata['o_unique'] = o_value_unique_new['o_unique']
@@ -176,10 +176,10 @@ def extract_od_list():
     o_value_unique = list(o_value_unique)
     print(od_data['o'].unique())
     print(len(od_data['o'].unique()))
-    # 节点o的长度-->节点o的数量
+    # Longitud del nodo O → Cantidad de nodos O
     len_o = len(od_data['o'].unique())
 
-    # 给o节点添加编号
+    # Asignar un número de identificación a los nodos O
     od_ID = []
     for i in range(len(o_value_unique)):
         od_ID.append(i)
@@ -189,8 +189,8 @@ def extract_od_list():
         pid_ID_list.append(od_ID[o_value_unique.index(i)])
     od_data['o_ID'] = pid_ID_list
 
-    # 向数据->添加d_ID
-    # 该语句可查看sid是否唯一
+    # Agregar d_ID a los datos
+    # Esta sentencia puede verificar si sid es único
     d_value_unique = od_data['d'].unique()
     d_value_unique_new = pd.DataFrame({'d_unique': d_value_unique})
     tempdata['d_unique'] = d_value_unique_new['d_unique']
@@ -202,10 +202,10 @@ def extract_od_list():
     print(od_data['d'].unique())
     print(len(od_data['d'].unique()))
 
-    # 节点d的长度-->节点o的数量
+    # Longitud del nodo d -> Cantidad de nodos o
     len_d = len(od_data['d'].unique())
     od_ID = []
-    # 给d节点添加编号
+    # Asignar un número de identificación a los nodos d
     for i in range(len(d_value_unique)):
         od_ID.append(i)
     odvalue = od_data['d']
@@ -214,20 +214,20 @@ def extract_od_list():
         pid_ID_list.append(od_ID[d_value_unique.index(i)])
     od_data['d_ID'] = pid_ID_list
 
-    # -->节点的唯一特征
+    # Característica única del nodo
     tempdata.to_csv(path + who + '/tempdata.csv')
 
-    # 提取od的经纬度
+    # Extraer la latitud y longitud de od
     o_lng_lat_raw = pd.read_csv(path + who + '/tempdata.csv', usecols=['o_unique'])
     d_lng_lat_raw = pd.read_csv(path + who + '/tempdata.csv', usecols=['d_unique'])
     o_lng_lat = pd.read_csv(path + who + '/tempdata.csv', usecols=['o_unique', 'o_lng', 'o_lat'])
     d_lng_lat = pd.read_csv(path + who + '/tempdata.csv', usecols=['d_unique', 'd_lng', 'd_lat'])
 
-    # 删除任何含nan的行-->去除噪声,用户信息缺失(pid = nan)或未点击选项(mode = 0)
+    # Eliminar cualquier fila que contenga NaN -> Eliminar ruido, información de usuario faltante (pid = nan) o sin opción seleccionada (mode = 0)
     o_lng_lat = o_lng_lat.dropna(axis=0, how='any')
     d_lng_lat = d_lng_lat.dropna(axis=0, how='any')
 
-    # 补充一列o或d用做索引
+    # Agregar una columna 'o' o 'd' como índice
     o_lng_lat['o'] = o_lng_lat['o_unique']
     d_lng_lat['d'] = d_lng_lat['d_unique']
 
@@ -235,7 +235,7 @@ def extract_od_list():
     print("d_lng_lat =", d_lng_lat)
 
     if od_flag == True:
-        # o部分相关数据导入<--与d数量有关，与pid数量有关，与时间time有关
+        # Importar datos relacionados con 'o' <- Relacionado con la cantidad de 'd', la cantidad de 'pid' y el tiempo
         o_time = pd.read_csv(path + who + '/o_time_embedding.csv')
         o_unique = pd.read_csv(path + who + '/o_unique.csv')
         o_pid_unique = pd.read_csv(path + who + '/o_pid_unique.csv')
@@ -245,51 +245,51 @@ def extract_od_list():
         d_pid_unique = pd.read_csv(path + who + '/d_pid_unique.csv')
 
         od_pid_unique = pd.read_csv(path + who + '/od_pid_unique.csv')
-        # o和d-->对d,o, pid, time的特征
-        # o部分
+        #  'o' y 'd' -> Características de d, o, pid, time
+        # Parte 'o'
         o_lng_lat = o_lng_lat.merge(o_time, 'left', ['o'])
         o_lng_lat = o_lng_lat.merge(o_unique, 'left', ['o'])
         o_lng_lat = o_lng_lat.merge(o_pid_unique, 'left', ['o'])
         print("o_lng_lat =", o_lng_lat)
-        # d部分
+        # Parte 'd'
         d_lng_lat = d_lng_lat.merge(d_time, 'left', ['d'])
         d_lng_lat = d_lng_lat.merge(d_unique, 'left', ['d'])
         d_lng_lat = d_lng_lat.merge(d_pid_unique, 'left', ['d'])
         print("d_lng_lat =", d_lng_lat)
 
-        # 删除无关项
+        # Eliminar elementos no relacionados
         del o_lng_lat['o']
         del d_lng_lat['d']
 
     del o_lng_lat['o_unique']
     del d_lng_lat['d_unique']
     print("o_lng_lat =", o_lng_lat)
-    # 空间特征
+    # Características espaciales
     o_lng_lat_feature = o_lng_lat.values
     d_lng_lat_feature = d_lng_lat.values
 
-    # 利用onehot编码增强效果
+    # Utilizar la codificación one-hot para mejorar el efecto
     # enc = OneHotEncoder(sparse=False)
     # o_lng_lat_feature = enc.fit_transform(o_lng_lat_feature)
     # d_lng_lat_feature = enc.fit_transform(d_lng_lat_feature)
-    # 维度少是少，表达的信息不见得少
+    # Pocos son los dimensiones, pero la información expresada no necesariamente es menor
     # o_d_lng_lat_feature = min_max_scaler.fit_transform(o_d_lng_lat_feature)
     o_lng_lat_feature = min_max_scaler.fit_transform(o_lng_lat_feature)
     d_lng_lat_feature = min_max_scaler.fit_transform(d_lng_lat_feature)
 
-    # 节点特征维度
+    # Dimensión de las características del nodo
     o_lng_lat_feature_v = o_lng_lat_feature.shape[1]
     d_lng_lat_feature_v = d_lng_lat_feature.shape[1]
 
     print("o_lng_lat_feature =", o_lng_lat_feature, o_lng_lat_feature.shape)
     print("d_lng_lat_feature =", d_lng_lat_feature, d_lng_lat_feature.shape)
 
-    # 节点特征，特征转化为tensor类型
+    # Características del nodo, conversión de características a tipo tensor
     o_features = th.FloatTensor(o_lng_lat_feature)
     d_features = th.FloatTensor(d_lng_lat_feature)
     # np,show()
 
-    # -------->可修改部分<---------#
+    # --------> Parte modificable <--------#
 
     # 节点数量
 
